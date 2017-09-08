@@ -11,9 +11,10 @@
 using namespace std;
 using namespace glm;
 
-#define VB_COUNT 2
+#define VB_COUNT 3
 #define VB_POSITION 0
-#define VB_TEX_COORDS 1
+#define VB_COLORS 1
+#define VB_TEX_COORDS 2
 #define MAX_VERTEX_COUNT 8000
 
 class Sticker {
@@ -34,16 +35,19 @@ private:
     vector<float> mVertexData;
     GLuint mCountPerVertex;
     vector<float> mTexCoords;
-    GLuint mCountPerTexCoords;
+    GLuint mCountPerTexCoord;
+    vector<float> mColors;
+    GLuint mCountPerColor;
 
     GLuint mProgram;
     GLuint mVB[VB_COUNT];
 
-    GLint mPositionHandle;
-    GLint mMvpMatrixHandle;
+    GLuint mPositionHandle;
+    GLuint mColorHandle;
+    GLuint mMvpMatrixHandle;
     GLuint mTexDataHandle;
-    GLint mTexCoordsHandle;
-    GLint mTexSampler2DHandle;
+    GLuint mTexCoordsHandle;
+    GLuint mTexSampler2DHandle;
 
     mat4 mModelMatrix;
     mat4 mViewMatrix;
@@ -53,7 +57,6 @@ private:
     float mAngle;
 
     float *mWorldVertices;
-
     long mLastAnimationTime;
 
     virtual void initOpenGL(const char *texturePath);

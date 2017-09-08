@@ -15,17 +15,21 @@ const char mVertexShaderCode[] =
                 "uniform mat4 u_MVPMatrix;"
                 "attribute vec2 a_TexCoords;"
                 "varying vec2 v_TexCoords;"
+                "attribute vec4 a_Color;"
+                "varying vec4 v_Color;"
                 "void main() {"
                 "    v_TexCoords = a_TexCoords;"
+                "    v_Color = a_Color;"
                 "    gl_Position = u_MVPMatrix * vec4(a_Position, 0.0f, 1.0f);"
                 "}";
 
 const char mFragShaderCode[] =
         "precision mediump float;"
+                "varying vec4 v_Color;"
                 "varying vec2 v_TexCoords;"
                 "uniform sampler2D u_Texture;"
                 "void main() {"
-                "    gl_FragColor = texture2D(u_Texture, v_TexCoords);"
+                "    gl_FragColor = texture2D(u_Texture, v_TexCoords) * v_Color;"
                 "}";
 
 void _spAtlasPage_createTexture(spAtlasPage *self, const char *path) {
@@ -44,10 +48,12 @@ Sticker::Sticker(const char *atlasPath, const char *jsonPath, const char *imageP
                  const char *defaultAnimation) {
     mEglContext = eglGetCurrentContext();
     mCountPerVertex = 2; // (x, y)
-    mCountPerTexCoords = 2; // (x, y)
+    mCountPerTexCoord = 2; // (x, y)
+    mCountPerColor = 4; // RGBA
 
     mProgram = 0;
     mPositionHandle = 0;
+    mColorHandle = 0;
     mMvpMatrixHandle = 0;
     mTexDataHandle = 0;
     mTexCoordsHandle = 0;
@@ -89,10 +95,11 @@ void Sticker::initOpenGL(const char *texturePath) {
         if (mProgram == 0) return;
     }
 
-    mPositionHandle = glGetAttribLocation(mProgram, "a_Position");
-    mTexCoordsHandle = glGetAttribLocation(mProgram, "a_TexCoords");
-    mMvpMatrixHandle = glGetUniformLocation(mProgram, "u_MVPMatrix");
-    mTexSampler2DHandle = glGetUniformLocation(mProgram, "u_Texture");
+    mPositionHandle = (GLuint) glGetAttribLocation(mProgram, "a_Position");
+    mColorHandle = (GLuint) glGetAttribLocation(mProgram, "a_Color");
+    mTexCoordsHandle = (GLuint) glGetAttribLocation(mProgram, "a_TexCoords");
+    mMvpMatrixHandle = (GLuint) glGetUniformLocation(mProgram, "u_MVPMatrix");
+    mTexSampler2DHandle = (GLuint) glGetUniformLocation(mProgram, "u_Texture");
     mTexDataHandle = loadTexture(texturePath);
 
     // Set view matrix
@@ -162,7 +169,7 @@ void Sticker::initSkeleton() {
     LOGD("Create animation state from animation state data: SUCCESSFUL............");
 
     // Set default position
-    mSkeleton->x = 20;
+    mSkeleton->x = 30;
     mSkeleton->y = -400;
     spSkeleton_updateWorldTransform(mSkeleton);
 
@@ -204,12 +211,16 @@ void Sticker::disposeSpineData() {
 
 void Sticker::bindBufferData() {
     glBindBuffer(GL_ARRAY_BUFFER, mVB[VB_POSITION]);
-    glBufferData(GL_ARRAY_BUFFER, mVertexData.size() * sizeof(GLfloat), &mVertexData[0],
+    glBufferData(GL_ARRAY_BUFFER, mVertexData.size() * sizeof(float), &mVertexData[0],
                  GL_STATIC_DRAW);
     checkGlError("glBufferData - vertex data");
 
+    glBindBuffer(GL_ARRAY_BUFFER, mVB[VB_COLORS]);
+    glBufferData(GL_ARRAY_BUFFER, mColors.size() * sizeof(float), &mColors[0], GL_STATIC_DRAW);
+    checkGlError("glBufferData - color data");
+
     glBindBuffer(GL_ARRAY_BUFFER, mVB[VB_TEX_COORDS]);
-    glBufferData(GL_ARRAY_BUFFER, mTexCoords.size() * sizeof(GLfloat), &mTexCoords[0],
+    glBufferData(GL_ARRAY_BUFFER, mTexCoords.size() * sizeof(float), &mTexCoords[0],
                  GL_STATIC_DRAW);
     checkGlError("glBufferData - texture coordinates data");
 }
@@ -236,11 +247,18 @@ void Sticker::passDataToOpenGl() {
                           mCountPerVertex * sizeof(GLfloat), 0);
     checkGlError("glVertexAttribPointer - pass vertex data");
 
+    // Pass color  data
+    glBindBuffer(GL_ARRAY_BUFFER, mVB[VB_COLORS]);
+    glEnableVertexAttribArray(mColorHandle);
+    glVertexAttribPointer(mColorHandle, mCountPerColor, GL_FLOAT, GL_FALSE,
+                          mCountPerColor * sizeof(float), 0);
+    checkGlError("glVertexAttribPointer - pass color data");
+
     // Pass texture coordinate data
     glBindBuffer(GL_ARRAY_BUFFER, mVB[VB_TEX_COORDS]);
     glEnableVertexAttribArray(mTexCoordsHandle);
-    glVertexAttribPointer(mTexCoordsHandle, mCountPerTexCoords, GL_FLOAT, GL_FALSE,
-                          mCountPerTexCoords * sizeof(GLfloat), 0);
+    glVertexAttribPointer(mTexCoordsHandle, mCountPerTexCoord, GL_FLOAT, GL_FALSE,
+                          mCountPerTexCoord * sizeof(GLfloat), 0);
     checkGlError("glVertexAttribPointer - pass texture coordinates data");
 
     // Pass texture data
@@ -317,6 +335,7 @@ void Sticker::updateVertexAndTexCoordsData() {
 
     // Clear old data
     mVertexData.clear();
+    mColors.clear();
     mTexCoords.clear();
 
     for (int i = 0; i < mSkeleton->slotsCount; ++i) {
@@ -349,29 +368,25 @@ void Sticker::updateVertexAndTexCoordsData_FromRegionAttachment(spRegionAttachme
                                                                 spSlot *slot) {
     //LOGD("REGION_ATTACHMENT: Update vertices data...");
     spRegionAttachment_computeWorldVertices(region, slot->bone, mWorldVertices, 0, 2);
-    // Create array draws: [0 - 1 - 2] [3 - 0 - 2]
-    // Push vertex 0 - 1 - 2 - 3
-    int i = 0;
-    for (i = 0; i < 8; i = i + 2) {
-        mVertexData.push_back(mWorldVertices[i]);
-        mVertexData.push_back(mWorldVertices[i + 1]);
-        mTexCoords.push_back(region->uvs[i]);
-        mTexCoords.push_back(region->uvs[i + 1]);
+    float r = mSkeleton->color.r * slot->color.r * region->color.r;
+    float g = mSkeleton->color.g * slot->color.g * region->color.g;
+    float b = mSkeleton->color.b * slot->color.b * region->color.b;
+    float a = mSkeleton->color.a * slot->color.a * region->color.a;
+
+    unsigned int order[6] = {0, 1, 2, 3, 0, 2};
+    int j;
+    for (int i = 0; i < 6; i++) {
+        mColors.push_back(r);
+        mColors.push_back(g);
+        mColors.push_back(b);
+        mColors.push_back(a);
+
+        j = order[i];
+        mVertexData.push_back(mWorldVertices[j * 2]);
+        mVertexData.push_back(mWorldVertices[j * 2 + 1]);
+        mTexCoords.push_back(region->uvs[j * 2]);
+        mTexCoords.push_back(region->uvs[j * 2 + 1]);
     }
-
-    // Push vertex 0
-    i = 0;
-    mVertexData.push_back(mWorldVertices[i]);
-    mVertexData.push_back(mWorldVertices[i + 1]);
-    mTexCoords.push_back(region->uvs[i]);
-    mTexCoords.push_back(region->uvs[i + 1]);
-
-    // Push vertex 2
-    i = 2;
-    mVertexData.push_back(mWorldVertices[i]);
-    mVertexData.push_back(mWorldVertices[i + 1]);
-    mTexCoords.push_back(region->uvs[i]);
-    mTexCoords.push_back(region->uvs[i + 1]);
     //LOGD("REGION_ATTACHMENT: Updated. Size = %d %d", mVertexData.size(), mTexCoords.size());
 }
 
@@ -383,8 +398,17 @@ void Sticker::updateVertexAndTexCoordsData_FromMeshAttachment(spMeshAttachment *
     //LOGD("MESH_ATTACHMENT: Update vertices data...");
     spVertexAttachment_computeWorldVertices(SUPER(mesh), slot, 0, mesh->super.worldVerticesLength,
                                             mWorldVertices, 0, 2);
+    float r = mSkeleton->color.r * slot->color.r * mesh->color.r;
+    float g = mSkeleton->color.g * slot->color.g * mesh->color.g;
+    float b = mSkeleton->color.b * slot->color.b * mesh->color.b;
+    float a = mSkeleton->color.a * slot->color.a * mesh->color.a;
+
     for (int i = 0; i < mesh->trianglesCount; ++i) {
         int j = mesh->triangles[i] << 1;
+        mColors.push_back(r);
+        mColors.push_back(g);
+        mColors.push_back(b);
+        mColors.push_back(a);
         mVertexData.push_back(mWorldVertices[j]);
         mVertexData.push_back(mWorldVertices[j + 1]);
         mTexCoords.push_back(mesh->uvs[j]);
