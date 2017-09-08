@@ -10,7 +10,7 @@ file(GLOB spine-lib
 
 # Native Sticker library files
 file(GLOB sticker-lib
-     "./src/main/cpp/src/GLES2Utils.cpp"
+     "./src/main/cpp/src/utils/*.cpp"
      "./src/main/cpp/src/Sticker.cpp"
      "./src/main/cpp/src/StickerWrapper.cpp")
 
@@ -29,4 +29,5 @@ target_link_libraries(sticker-lib
 
 # include directories
 include_directories("./src/main/cpp/include"
-                    "./src/main/cpp/include/libs")
+                    "./src/main/cpp/include/libs"
+                    "./src/main/cpp/include/utils")

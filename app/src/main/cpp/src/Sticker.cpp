@@ -2,8 +2,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <android/log.h>
-#include <time.h>
-#include <GLES2Utils.h>
+#include <utils/TimeUtils.h>
+#include <utils/StringUtils.h>
+#include <utils/GLES2Utils.h>
 
 #define LOG_TAG "STICKER_CPP"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -26,18 +27,6 @@ const char mFragShaderCode[] =
                 "void main() {"
                 "    gl_FragColor = texture2D(u_Texture, v_TexCoords);"
                 "}";
-
-char *getString(const char *str) {
-    if (str == NULL)
-        return NULL;
-
-    size_t length = strlen(str);
-    char *result = new char[length + 1];
-    strncpy(result, str, length);
-    result[length] = '\0';
-
-    return result;
-}
 
 void _spAtlasPage_createTexture(spAtlasPage *self, const char *path) {
 
@@ -73,7 +62,6 @@ Sticker::Sticker(const char *atlasPath, const char *jsonPath, const char *imageP
     mDefaultAnimation = getString(defaultAnimation);
 
     mLastAnimationTime = 0; // Default
-
     mWorldVertices = new float[MAX_VERTEX_COUNT];
 }
 
@@ -105,13 +93,16 @@ void Sticker::initOpenGL(const char *texturePath) {
     mTexCoordsHandle = glGetAttribLocation(mProgram, "a_TexCoords");
     mMvpMatrixHandle = glGetUniformLocation(mProgram, "u_MVPMatrix");
     mTexSampler2DHandle = glGetUniformLocation(mProgram, "u_Texture");
-
     mTexDataHandle = loadTexture(texturePath);
-    mViewMatrix = lookAt(
-            vec3(0, 0, 3.0f),
-            vec3(0, 0, 0),
-            vec3(0, 1.0f, 0)
-    );
+
+    // Set view matrix
+    mViewMatrix = lookAt(vec3(0, 0, 3.0f),
+                         vec3(0, 0, 0),
+                         vec3(0, 1.0f, 0));
+
+    // Generate new vertex buffer
+    glGenBuffers(VB_COUNT, mVB);
+
     LOGD("Init OpenGL: SUCCESSFUL...................");
 }
 
@@ -171,9 +162,10 @@ void Sticker::initSkeleton() {
     LOGD("Create animation state from animation state data: SUCCESSFUL............");
 
     // Set default position
-    mSkeleton->x = 0;
-    mSkeleton->y = 0;
+    mSkeleton->x = 20;
+    mSkeleton->y = -400;
     spSkeleton_updateWorldTransform(mSkeleton);
+
     LOGD("Init Spine: SUCCESSFUL...................");
 }
 
@@ -211,10 +203,6 @@ void Sticker::disposeSpineData() {
 }
 
 void Sticker::bindBufferData() {
-    // Delete buffer before generating new buffer
-    glDeleteBuffers(VB_COUNT, mVB);
-
-    glGenBuffers(VB_COUNT, mVB);
     glBindBuffer(GL_ARRAY_BUFFER, mVB[VB_POSITION]);
     glBufferData(GL_ARRAY_BUFFER, mVertexData.size() * sizeof(GLfloat), &mVertexData[0],
                  GL_STATIC_DRAW);
@@ -234,8 +222,7 @@ void Sticker::setAngleAndTranslation(float angle, vec3 trans) {
 void Sticker::resize(int width, int height) {
     glViewport(0, 0, width, height);
     float ratio = (float) width / (float) height;
-    //mProjectionMatrix = frustum(-ratio * 800.0f, ratio * 800.0f, -800.0f, 800.0f, 2.0f, 5.0f);
-    mProjectionMatrix =  ortho(-ratio * 1000.0f, ratio * 1000.0f, -1000.0f, 1000.0f, 2.0f, 5.0f);
+    mProjectionMatrix = ortho(-ratio * 1400.0f, ratio * 1400.0f, -1400.0f, 1400.0f, 2.0f, 5.0f);
 }
 
 void Sticker::passDataToOpenGl() {
@@ -269,44 +256,37 @@ void Sticker::passDataToOpenGl() {
 }
 
 void Sticker::calculateMvpMatrix() {
-    // model * view * projection
     mModelMatrix = mat4(1.0f);
     mModelMatrix = translate(mModelMatrix, mTrans);
     mModelMatrix = rotate(mModelMatrix, radians(mAngle), vec3(0, 0, 1.0f));
     mMvpMatrix = mProjectionMatrix * mViewMatrix * mModelMatrix;
 }
 
-float currentSystemSecond() {
-    struct timespec time;
-    clock_gettime(CLOCK_MONOTONIC, &time);
-    return (float) (time.tv_sec + ((float) time.tv_nsec) / 1e9);
-}
-
-long currentSystemMillisecond() {
-    return (long) (currentSystemSecond() * 1000);
-}
-
 void Sticker::draw() {
-    long currentTime = currentSystemMillisecond();
-    long deltaTime = mLastAnimationTime == 0L ? 0L : currentTime - mLastAnimationTime;
-    mLastAnimationTime = currentTime;
+    if (!mSkeleton) {
+        LOGE("updateVertexAndTexCoordsData - skeleton is NULL");
+        return;
+    }
+
+    float deltaTime = calculateDeltaTime() * 1.0f / 1000.0f;
 
     // Update animation state by delta time
-    spAnimationState_update(mAnimationState, deltaTime * 1.0f / 1000.0f);
-    LOGD("spAnimationState_update - delta time = %f", deltaTime * 1.0f / 1000.0f);
+    spAnimationState_update(mAnimationState, deltaTime);
+    LOGD("Update animation state at %f seconds", deltaTime);
 
     // Apply the animation state to skeleton
     spAnimationState_apply(mAnimationState, mSkeleton);
-    LOGD("Apply the animation state to skeleton");
+    LOGD("Apply the animation state to skeleton at %f seconds", deltaTime);
 
     // Calculate world transform for rendering
     spSkeleton_updateWorldTransform(mSkeleton);
-    LOGD("Calculate world transform for rendering");
+    LOGD("Calculate world transform for rendering at %f seconds", deltaTime);
 
-    // Update new data
-    LOGD("Updating new data...");
+    // Update new vertices and texture coordinate
+    LOGD("Updating new vertices and texture coordinate...");
     updateVertexAndTexCoordsData();
 
+    // Bind data to GPU
     LOGD("Binding buffer data....");
     bindBufferData();
 
@@ -320,6 +300,13 @@ void Sticker::draw() {
 
     glDisableVertexAttribArray(mPositionHandle);
     glDisableVertexAttribArray(mTexCoordsHandle);
+}
+
+long Sticker::calculateDeltaTime() {
+    long currentTime = getCurrentSystemTimeInMilli();
+    long deltaTime = this->mLastAnimationTime == 0L ? 0L : currentTime - this->mLastAnimationTime;
+    mLastAnimationTime = currentTime;
+    return deltaTime;
 }
 
 void Sticker::updateVertexAndTexCoordsData() {
@@ -343,24 +330,25 @@ void Sticker::updateVertexAndTexCoordsData() {
         switch (attachment->type) {
             case SP_ATTACHMENT_REGION:
                 updateVertexAndTexCoordsData_FromRegionAttachment(
-                        (spRegionAttachment *) attachment, slot->bone);
+                        (spRegionAttachment *) attachment, slot);
                 break;
 
             case SP_ATTACHMENT_MESH:
-                updateVertexAndTexCoordsData_FromMeshAttachment((spMeshAttachment *) attachment,
-                                                                slot);
+                updateVertexAndTexCoordsData_FromMeshAttachment(
+                        (spMeshAttachment *) attachment, slot);
                 break;
 
             default:
+                LOGE("Other attachment: %s", attachment->type);
                 break;
         }
     }
 }
 
 void Sticker::updateVertexAndTexCoordsData_FromRegionAttachment(spRegionAttachment *region,
-                                                                spBone *bone) {
+                                                                spSlot *slot) {
     //LOGD("REGION_ATTACHMENT: Update vertices data...");
-    spRegionAttachment_computeWorldVertices(region, bone, mWorldVertices, 0, 2);
+    spRegionAttachment_computeWorldVertices(region, slot->bone, mWorldVertices, 0, 2);
     // Create array draws: [0 - 1 - 2] [3 - 0 - 2]
     // Push vertex 0 - 1 - 2 - 3
     int i = 0;

@@ -14,7 +14,7 @@ using namespace glm;
 #define VB_COUNT 2
 #define VB_POSITION 0
 #define VB_TEX_COORDS 1
-#define MAX_VERTEX_COUNT 6000
+#define MAX_VERTEX_COUNT 8000
 
 class Sticker {
 
@@ -78,6 +78,8 @@ public:
 
     virtual void calculateMvpMatrix();
 
+    virtual long calculateDeltaTime();
+
     virtual void resize(int width, int height);
 
     virtual void draw();
@@ -85,7 +87,7 @@ public:
     virtual void updateVertexAndTexCoordsData();
 
     virtual void updateVertexAndTexCoordsData_FromRegionAttachment(spRegionAttachment *attachment,
-                                                                   spBone *bone);
+                                                                   spSlot *slot);
 
     virtual void updateVertexAndTexCoordsData_FromMeshAttachment(spMeshAttachment *attachment,
                                                                  spSlot *slot);

@@ -1,4 +1,4 @@
-#include <GLES2Utils.h>
+#include <utils/GLES2Utils.h>
 #include <android/log.h>
 #include <stdlib.h>
 #include <stb/stb_image.h>
