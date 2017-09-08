@@ -1,7 +1,6 @@
-#include <GLES2/gl2.h>
+#include <GLES2Utils.h>
 #include <android/log.h>
 #include <stdlib.h>
-#include <GLES2Utils.h>
 #include <stb/stb_image.h>
 
 #define LOG_TAG "GLES2Utils"
@@ -102,6 +101,7 @@ GLuint loadTexture(const char *imagePath) {
         LOGE("Load texture error");
     }
 
+    LOGD("Load texture successful: %s", imagePath);
     return textureHandle;
 }
 
