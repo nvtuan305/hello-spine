@@ -33,11 +33,11 @@ private:
 
     EGLContext mEglContext;
     vector<float> mVertexData;
-    GLuint mCountPerVertex;
-    vector<float> mTexCoords;
-    GLuint mCountPerTexCoord;
     vector<float> mColors;
+    vector<float> mTexCoords;
+    GLuint mCountPerVertex;
     GLuint mCountPerColor;
+    GLuint mCountPerTexCoord;
 
     GLuint mProgram;
     GLuint mVB[VB_COUNT];
@@ -58,10 +58,11 @@ private:
 
     float *mWorldVertices;
     long mLastAnimationTime;
+    int mCurrentBlendMode = -1;
 
     virtual void initOpenGL(const char *texturePath);
 
-    virtual void initSkeleton();
+    virtual void initSpine();
 
     virtual void bindBufferData();
 
@@ -79,21 +80,27 @@ public:
 
     virtual void setAngleAndTranslation(float angle, glm::vec3 trans);
 
+    virtual void resize(int width, int height);
+
     virtual void calculateMvpMatrix();
 
     virtual long calculateDeltaTime();
 
-    virtual void resize(int width, int height);
-
     virtual void draw();
+
+    virtual void render();
 
     virtual void updateVertexAndTexCoordsData();
 
-    virtual void updateVertexAndTexCoordsData_FromRegionAttachment(spRegionAttachment *attachment,
+    virtual void updateBlendMode(int newMode);
+
+    virtual void updateVertexAndTexCoordsData_fromRegionAttachment(spRegionAttachment *attachment,
                                                                    spSlot *slot);
 
-    virtual void updateVertexAndTexCoordsData_FromMeshAttachment(spMeshAttachment *attachment,
+    virtual void updateVertexAndTexCoordsData_fromMeshAttachment(spMeshAttachment *attachment,
                                                                  spSlot *slot);
+
+    virtual void clearGLData();
 
     virtual void disposeSpineData();
 };

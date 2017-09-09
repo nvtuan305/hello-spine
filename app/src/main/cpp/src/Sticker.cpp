@@ -10,7 +10,7 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
-const char mVertexShaderCode[] =
+const char vertexShaderCode[] =
         "attribute vec2 a_Position;"
                 "uniform mat4 u_MVPMatrix;"
                 "attribute vec2 a_TexCoords;"
@@ -23,7 +23,7 @@ const char mVertexShaderCode[] =
                 "    gl_Position = u_MVPMatrix * vec4(a_Position, 0.0f, 1.0f);"
                 "}";
 
-const char mFragShaderCode[] =
+const char fragShaderCode[] =
         "precision mediump float;"
                 "varying vec4 v_Color;"
                 "varying vec2 v_TexCoords;"
@@ -83,18 +83,26 @@ Sticker::~Sticker() {
     }
 }
 
+/**
+ * Initialize sticker
+ */
 void Sticker::init() {
     initOpenGL(mImagePath);
-    initSkeleton();
+    initSpine();
 }
 
+/**
+ * Initialize OpenGL
+ * @param texturePath path of the texture image
+ */
 void Sticker::initOpenGL(const char *texturePath) {
     // Create program only one time
     if (mProgram == 0) {
-        mProgram = createProgram(mVertexShaderCode, mFragShaderCode);
+        mProgram = createProgram(vertexShaderCode, fragShaderCode);
         if (mProgram == 0) return;
     }
 
+    // Get handle for variables in GPU
     mPositionHandle = (GLuint) glGetAttribLocation(mProgram, "a_Position");
     mColorHandle = (GLuint) glGetAttribLocation(mProgram, "a_Color");
     mTexCoordsHandle = (GLuint) glGetAttribLocation(mProgram, "a_TexCoords");
@@ -113,7 +121,10 @@ void Sticker::initOpenGL(const char *texturePath) {
     LOGD("Init OpenGL: SUCCESSFUL...................");
 }
 
-void Sticker::initSkeleton() {
+/**
+ * Initialize spine: Skeleton and animation state
+ */
+void Sticker::initSpine() {
     // Read atlas from atlas file
     mAtlas = spAtlas_createFromFile(mAtlasPath, 0);
     if (!mAtlas) {
@@ -176,6 +187,9 @@ void Sticker::initSkeleton() {
     LOGD("Init Spine: SUCCESSFUL...................");
 }
 
+/**
+ * Dispose spine data
+ */
 void Sticker::disposeSpineData() {
     if (mAtlas) {
         spAtlas_dispose(mAtlas);
@@ -209,6 +223,224 @@ void Sticker::disposeSpineData() {
     mAnimationState = NULL;
 }
 
+/**
+ * Set rotation angle and translation vector
+ *
+ * @param angle rotation angle
+ * @param trans translation vector
+ */
+void Sticker::setAngleAndTranslation(float angle, vec3 trans) {
+    mAngle = angle;
+    mTrans = trans;
+}
+
+/**
+ * Recalculate projection matrix when configuration changed
+ *
+ * @param width new width of the view
+ * @param height new height of the view
+ */
+void Sticker::resize(int width, int height) {
+    glViewport(0, 0, width, height);
+    float ratio = (float) width / (float) height;
+
+    // TODO Calculate position of camera (the left/right/top/bottom planes)
+    // Default max size of sticker 1400 x 1400
+    float maxSize = 1400.0f;
+    mProjectionMatrix = ortho(-ratio * maxSize, ratio * maxSize, -maxSize,
+                              maxSize, 2.0f, 5.0f);
+}
+
+/**
+ * Draw sticker at the current time
+ */
+void Sticker::draw() {
+    if (!mSkeleton) {
+        LOGE("updateVertexAndTexCoordsData - skeleton is NULL");
+        return;
+    }
+
+    float deltaTime = calculateDeltaTime() * 1.0f / 1000.0f;
+
+    // Update animation state by delta time
+    spAnimationState_update(mAnimationState, deltaTime);
+    LOGD("Update animation state at %f seconds", deltaTime);
+
+    // Apply the animation state to skeleton
+    spAnimationState_apply(mAnimationState, mSkeleton);
+    LOGD("Apply the animation state to skeleton at %f seconds", deltaTime);
+
+    // Calculate world transform for rendering
+    spSkeleton_updateWorldTransform(mSkeleton);
+    LOGD("Calculate world transform for rendering at %f seconds", deltaTime);
+
+    // Update new vertices and texture coordinate
+    LOGD("Updating new vertices and texture coordinate...");
+    updateVertexAndTexCoordsData();
+}
+
+/**
+ * Get the delta time from the current time to the last drawn time
+ */
+long Sticker::calculateDeltaTime() {
+    long currentTime = getCurrentSystemTimeInMilli();
+    long deltaTime = this->mLastAnimationTime == 0L ? 0L : currentTime - this->mLastAnimationTime;
+    mLastAnimationTime = currentTime;
+    return deltaTime;
+}
+
+/**
+ * Update vextex data and texture coordinate data
+ */
+void Sticker::updateVertexAndTexCoordsData() {
+    if (!mSkeleton) {
+        LOGE("updateVertexAndTexCoordsData - skeleton is NULL");
+        return;
+    }
+
+    // Clear old data
+    clearGLData();
+
+    for (int i = 0; i < mSkeleton->slotsCount; ++i) {
+        spSlot *slot = mSkeleton->drawOrder[i];
+        if (!slot) continue;
+
+        spAttachment *attachment = slot->attachment;
+        if (!attachment) continue;
+        LOGD("Processing attachment of SLOT[%d]...", i);
+
+        // Update blend mode if necessary
+        int blendMode = slot->data->blendMode;
+        if (mCurrentBlendMode != blendMode) {
+            updateBlendMode(blendMode);
+            render();
+            clearGLData();
+            LOGD("New blend mode: %d", mCurrentBlendMode);
+        }
+
+        switch (attachment->type) {
+            case SP_ATTACHMENT_REGION:
+                updateVertexAndTexCoordsData_fromRegionAttachment(
+                        (spRegionAttachment *) attachment, slot);
+                break;
+
+            case SP_ATTACHMENT_MESH:
+                updateVertexAndTexCoordsData_fromMeshAttachment(
+                        (spMeshAttachment *) attachment, slot);
+                break;
+
+            default:
+                LOGE("Other attachment: %s", attachment->type);
+                break;
+        }
+    }
+
+    render();
+}
+
+/**
+ * Update new blend mode
+ */
+void Sticker::updateBlendMode(int newMode) {
+    mCurrentBlendMode = newMode;
+
+    switch (mCurrentBlendMode) {
+        case SP_BLEND_MODE_ADDITIVE: // Cr = Cs + Cd
+            glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            break;
+
+        case SP_BLEND_MODE_MULTIPLY: // Cr = Cs * Cd
+            glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            break;
+
+        case SP_BLEND_MODE_SCREEN: // Cr = Cs * (1 - Cd) + Cd
+            glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_COLOR, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            break;
+
+        case SP_BLEND_MODE_NORMAL:
+            glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE,
+                                GL_ONE_MINUS_SRC_ALPHA);
+            break;
+
+        default: // Transparency blending
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            break;
+    }
+}
+
+/**
+ * Clear old GL data
+ */
+void Sticker::clearGLData() {
+    mVertexData.clear();
+    mColors.clear();
+    mTexCoords.clear();
+}
+
+/**
+ * Update vextex data and texture coordinate data from region attachment
+ */
+void Sticker::updateVertexAndTexCoordsData_fromRegionAttachment(spRegionAttachment *region,
+                                                                spSlot *slot) {
+    // LOGD("REGION_ATTACHMENT: Update vertices data...");
+    spRegionAttachment_computeWorldVertices(region, slot->bone, mWorldVertices, 0, 2);
+    float r = mSkeleton->color.r * slot->color.r * region->color.r;
+    float g = mSkeleton->color.g * slot->color.g * region->color.g;
+    float b = mSkeleton->color.b * slot->color.b * region->color.b;
+    float a = mSkeleton->color.a * slot->color.a * region->color.a;
+
+    unsigned int order[6] = {0, 1, 2, 3, 0, 2};
+    int j;
+    for (int i = 0; i < 6; i++) {
+        mColors.push_back(r);
+        mColors.push_back(g);
+        mColors.push_back(b);
+        mColors.push_back(a);
+
+        j = order[i];
+        mVertexData.push_back(mWorldVertices[j * 2]);
+        mVertexData.push_back(mWorldVertices[j * 2 + 1]);
+        mTexCoords.push_back(region->uvs[j * 2]);
+        mTexCoords.push_back(region->uvs[j * 2 + 1]);
+    }
+
+    // LOGD("REGION_ATTACHMENT: Updated. Size = %d %d", mVertexData.size(), mTexCoords.size());
+}
+
+/**
+ * Update vextex data and texture coordinate data from mesh attachment
+ */
+void Sticker::updateVertexAndTexCoordsData_fromMeshAttachment(spMeshAttachment *mesh,
+                                                              spSlot *slot) {
+    if (mesh->super.worldVerticesLength > MAX_VERTEX_COUNT)
+        return;
+
+    // LOGD("MESH_ATTACHMENT: Update vertices data...");
+    spVertexAttachment_computeWorldVertices(SUPER(mesh), slot, 0, mesh->super.worldVerticesLength,
+                                            mWorldVertices, 0, 2);
+    float r = mSkeleton->color.r * slot->color.r * mesh->color.r;
+    float g = mSkeleton->color.g * slot->color.g * mesh->color.g;
+    float b = mSkeleton->color.b * slot->color.b * mesh->color.b;
+    float a = mSkeleton->color.a * slot->color.a * mesh->color.a;
+
+    for (int i = 0; i < mesh->trianglesCount; ++i) {
+        int j = mesh->triangles[i] << 1;
+        mColors.push_back(r);
+        mColors.push_back(g);
+        mColors.push_back(b);
+        mColors.push_back(a);
+
+        mVertexData.push_back(mWorldVertices[j]);
+        mVertexData.push_back(mWorldVertices[j + 1]);
+        mTexCoords.push_back(mesh->uvs[j]);
+        mTexCoords.push_back(mesh->uvs[j + 1]);
+    }
+    // LOGD("MESH_ATTACHMENT: Updated. Size = %d %d", mVertexData.size(), mTexCoords.size());
+}
+
+/**
+ * Bind buffer data
+ */
 void Sticker::bindBufferData() {
     glBindBuffer(GL_ARRAY_BUFFER, mVB[VB_POSITION]);
     glBufferData(GL_ARRAY_BUFFER, mVertexData.size() * sizeof(float), &mVertexData[0],
@@ -225,17 +457,9 @@ void Sticker::bindBufferData() {
     checkGlError("glBufferData - texture coordinates data");
 }
 
-void Sticker::setAngleAndTranslation(float angle, vec3 trans) {
-    mAngle = angle;
-    mTrans = trans;
-}
-
-void Sticker::resize(int width, int height) {
-    glViewport(0, 0, width, height);
-    float ratio = (float) width / (float) height;
-    mProjectionMatrix = ortho(-ratio * 1400.0f, ratio * 1400.0f, -1400.0f, 1400.0f, 2.0f, 5.0f);
-}
-
+/**
+ * Pass data to GPU
+ */
 void Sticker::passDataToOpenGl() {
     glUseProgram(mProgram);
     checkGlError("glUseProgram");
@@ -273,37 +497,10 @@ void Sticker::passDataToOpenGl() {
     checkGlError("glUniformMatrix4fv - pass MVP matrix data");
 }
 
-void Sticker::calculateMvpMatrix() {
-    mModelMatrix = mat4(1.0f);
-    mModelMatrix = translate(mModelMatrix, mTrans);
-    mModelMatrix = rotate(mModelMatrix, radians(mAngle), vec3(0, 0, 1.0f));
-    mMvpMatrix = mProjectionMatrix * mViewMatrix * mModelMatrix;
-}
-
-void Sticker::draw() {
-    if (!mSkeleton) {
-        LOGE("updateVertexAndTexCoordsData - skeleton is NULL");
-        return;
-    }
-
-    float deltaTime = calculateDeltaTime() * 1.0f / 1000.0f;
-
-    // Update animation state by delta time
-    spAnimationState_update(mAnimationState, deltaTime);
-    LOGD("Update animation state at %f seconds", deltaTime);
-
-    // Apply the animation state to skeleton
-    spAnimationState_apply(mAnimationState, mSkeleton);
-    LOGD("Apply the animation state to skeleton at %f seconds", deltaTime);
-
-    // Calculate world transform for rendering
-    spSkeleton_updateWorldTransform(mSkeleton);
-    LOGD("Calculate world transform for rendering at %f seconds", deltaTime);
-
-    // Update new vertices and texture coordinate
-    LOGD("Updating new vertices and texture coordinate...");
-    updateVertexAndTexCoordsData();
-
+/**
+ * Render sticker
+ */
+void Sticker::render() {
     // Bind data to GPU
     LOGD("Binding buffer data....");
     bindBufferData();
@@ -313,109 +510,19 @@ void Sticker::draw() {
     passDataToOpenGl();
 
     // Draw
-    glDrawArrays(GL_TRIANGLES, 0, (unsigned) mVertexData.size() / 2);
+    glDrawArrays(GL_TRIANGLES, 0, (unsigned) this->mVertexData.size() / 2);
     checkGlError("glDrawArrays");
 
-    glDisableVertexAttribArray(mPositionHandle);
-    glDisableVertexAttribArray(mTexCoordsHandle);
+    glDisableVertexAttribArray(this->mPositionHandle);
+    glDisableVertexAttribArray(this->mTexCoordsHandle);
 }
 
-long Sticker::calculateDeltaTime() {
-    long currentTime = getCurrentSystemTimeInMilli();
-    long deltaTime = this->mLastAnimationTime == 0L ? 0L : currentTime - this->mLastAnimationTime;
-    mLastAnimationTime = currentTime;
-    return deltaTime;
-}
-
-void Sticker::updateVertexAndTexCoordsData() {
-    if (!mSkeleton) {
-        LOGE("updateVertexAndTexCoordsData - skeleton is NULL");
-        return;
-    }
-
-    // Clear old data
-    mVertexData.clear();
-    mColors.clear();
-    mTexCoords.clear();
-
-    for (int i = 0; i < mSkeleton->slotsCount; ++i) {
-        spSlot *slot = mSkeleton->drawOrder[i];
-        if (!slot) continue;
-
-        spAttachment *attachment = slot->attachment;
-        if (!attachment) continue;
-        LOGD("Processing attachment of SLOT[%d]...", i);
-
-        switch (attachment->type) {
-            case SP_ATTACHMENT_REGION:
-                updateVertexAndTexCoordsData_FromRegionAttachment(
-                        (spRegionAttachment *) attachment, slot);
-                break;
-
-            case SP_ATTACHMENT_MESH:
-                updateVertexAndTexCoordsData_FromMeshAttachment(
-                        (spMeshAttachment *) attachment, slot);
-                break;
-
-            default:
-                LOGE("Other attachment: %s", attachment->type);
-                break;
-        }
-    }
-}
-
-void Sticker::updateVertexAndTexCoordsData_FromRegionAttachment(spRegionAttachment *region,
-                                                                spSlot *slot) {
-    //LOGD("REGION_ATTACHMENT: Update vertices data...");
-    spRegionAttachment_computeWorldVertices(region, slot->bone, mWorldVertices, 0, 2);
-    float r = mSkeleton->color.r * slot->color.r * region->color.r;
-    float g = mSkeleton->color.g * slot->color.g * region->color.g;
-    float b = mSkeleton->color.b * slot->color.b * region->color.b;
-    float a = mSkeleton->color.a * slot->color.a * region->color.a;
-
-    unsigned int order[6] = {0, 1, 2, 3, 0, 2};
-    int j;
-    for (int i = 0; i < 6; i++) {
-        mColors.push_back(r);
-        mColors.push_back(g);
-        mColors.push_back(b);
-        mColors.push_back(a);
-
-        j = order[i];
-        mVertexData.push_back(mWorldVertices[j * 2]);
-        mVertexData.push_back(mWorldVertices[j * 2 + 1]);
-        mTexCoords.push_back(region->uvs[j * 2]);
-        mTexCoords.push_back(region->uvs[j * 2 + 1]);
-    }
-    //LOGD("REGION_ATTACHMENT: Updated. Size = %d %d", mVertexData.size(), mTexCoords.size());
-}
-
-void Sticker::updateVertexAndTexCoordsData_FromMeshAttachment(spMeshAttachment *mesh,
-                                                              spSlot *slot) {
-    if (mesh->super.worldVerticesLength > MAX_VERTEX_COUNT)
-        return;
-
-    //LOGD("MESH_ATTACHMENT: Update vertices data...");
-    spVertexAttachment_computeWorldVertices(SUPER(mesh), slot, 0, mesh->super.worldVerticesLength,
-                                            mWorldVertices, 0, 2);
-    float r = mSkeleton->color.r * slot->color.r * mesh->color.r;
-    float g = mSkeleton->color.g * slot->color.g * mesh->color.g;
-    float b = mSkeleton->color.b * slot->color.b * mesh->color.b;
-    float a = mSkeleton->color.a * slot->color.a * mesh->color.a;
-
-    for (int i = 0; i < mesh->trianglesCount; ++i) {
-        int j = mesh->triangles[i] << 1;
-        mColors.push_back(r);
-        mColors.push_back(g);
-        mColors.push_back(b);
-        mColors.push_back(a);
-        mVertexData.push_back(mWorldVertices[j]);
-        mVertexData.push_back(mWorldVertices[j + 1]);
-        mTexCoords.push_back(mesh->uvs[j]);
-        mTexCoords.push_back(mesh->uvs[j + 1]);
-        //LOGD("MESH_ATTACHMENT: triangles[%d] = %f %f %f %f", i, mWorldVertices[j],
-//             mWorldVertices[j + 1],
-//             mesh->uvs[j], mesh->uvs[j + 1]);
-    }
-    //LOGD("MESH_ATTACHMENT: Updated. Size = %d %d", mVertexData.size(), mTexCoords.size());
+/**
+ * Calculate MVP matrix
+ */
+void Sticker::calculateMvpMatrix() {
+    mModelMatrix = mat4(1.0f);
+    mModelMatrix = translate(mModelMatrix, mTrans);
+    mModelMatrix = rotate(mModelMatrix, radians(mAngle), vec3(0, 0, 1.0f));
+    mMvpMatrix = mProjectionMatrix * mViewMatrix * mModelMatrix;
 }
