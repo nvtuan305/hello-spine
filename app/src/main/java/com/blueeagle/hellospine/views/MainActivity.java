@@ -2,6 +2,7 @@ package com.blueeagle.hellospine.views;
 
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 
 import com.blueeagle.hellospine.R;
 import com.blueeagle.hellospine.gl.StickerSurfaceView;
@@ -31,5 +32,11 @@ public class MainActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         mStickerSurfaceView.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        mStickerSurfaceView.onSurfaceDestroy();
+        super.onDestroy();
     }
 }

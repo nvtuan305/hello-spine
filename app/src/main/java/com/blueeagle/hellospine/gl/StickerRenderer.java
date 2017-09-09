@@ -11,23 +11,39 @@ import javax.microedition.khronos.opengles.GL10;
 
 public class StickerRenderer implements GLSurfaceView.Renderer {
 
-    private StickerRendererManager mStickerManager;
+    static {
+        System.loadLibrary("sticker-lib");
+    }
 
     @Override
     public void onSurfaceCreated(GL10 gl10, EGLConfig eglConfig) {
-        mStickerManager = new StickerRendererManager();
-        mStickerManager.init();
+        initStickerView();
     }
 
     @Override
     public void onSurfaceChanged(GL10 gl10, int width, int height) {
-        if (mStickerManager != null)
-            mStickerManager.stickerSurfaceChanged(width, height);
+        onStickerSurfaceChanged(width, height);
     }
 
     @Override
     public void onDrawFrame(GL10 gl10) {
-        if (mStickerManager != null)
-            mStickerManager.drawStickerFrame();
+        onStickerDrawFrame();
     }
+
+    public void onSurfaceViewDestroyed() {
+        destroySticker();
+    }
+
+    /*
+     * ----------------------------------------------------------------------
+     * Native method declaration
+     * ----------------------------------------------------------------------
+     */
+    private native void initStickerView();
+
+    private native void onStickerSurfaceChanged(int width, int height);
+
+    private native void onStickerDrawFrame();
+
+    private native void destroySticker();
 }

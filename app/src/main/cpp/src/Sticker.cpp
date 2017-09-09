@@ -71,18 +71,6 @@ Sticker::Sticker(const char *atlasPath, const char *jsonPath, const char *imageP
     mWorldVertices = new float[MAX_VERTEX_COUNT];
 }
 
-Sticker::~Sticker() {
-    mVertexData.clear();
-    mTexCoords.clear();
-
-    if (eglGetCurrentContext() == mEglContext) {
-        for (int i = 0; i < VB_COUNT; ++i) {
-            glDeleteBuffers(1, &mVB[i]);
-        }
-        glDeleteProgram(mProgram);
-    }
-}
-
 /**
  * Initialize sticker
  */
@@ -185,42 +173,6 @@ void Sticker::initSpine() {
     spSkeleton_updateWorldTransform(mSkeleton);
 
     LOGD("Init Spine: SUCCESSFUL...................");
-}
-
-/**
- * Dispose spine data
- */
-void Sticker::disposeSpineData() {
-    if (mAtlas) {
-        spAtlas_dispose(mAtlas);
-        LOGD("Dispose atlas");
-    }
-
-    if (mSkeletonData) {
-        spSkeletonData_dispose(mSkeletonData);
-        LOGD("Dispose skeleton data");
-    }
-
-    if (mSkeleton) {
-        spSkeleton_dispose(mSkeleton);
-        LOGD("Dispose skeleton");
-    }
-
-    if (mAnimationStateData) {
-        spAnimationStateData_dispose(mAnimationStateData);
-        LOGD("Dispose animation state data");
-    }
-
-    if (mAnimationState) {
-        spAnimationState_dispose(mAnimationState);
-        LOGD("Dispose animation state");
-    }
-
-    mAtlas = NULL;
-    mSkeletonData = NULL;
-    mSkeleton = NULL;
-    mAnimationStateData = NULL;
-    mAnimationState = NULL;
 }
 
 /**
@@ -525,4 +477,62 @@ void Sticker::calculateMvpMatrix() {
     mModelMatrix = translate(mModelMatrix, mTrans);
     mModelMatrix = rotate(mModelMatrix, radians(mAngle), vec3(0, 0, 1.0f));
     mMvpMatrix = mProjectionMatrix * mViewMatrix * mModelMatrix;
+}
+
+Sticker::~Sticker() {
+    if (eglGetCurrentContext() != mEglContext)
+        return;
+
+    LOGD("Clearing EGL data...........");
+    glDeleteBuffers(VB_COUNT, mVB);
+    glDeleteTextures(1, &mTexDataHandle);
+    glDeleteProgram(mProgram);
+    LOGD("Clear EGL data: SUCCESSFUL...........");
+
+    clearGLData();
+
+    if (mWorldVertices != NULL) {
+        delete[] mWorldVertices;
+        mWorldVertices = NULL;
+    }
+
+    disposeSpineData();
+}
+
+/**
+ * Dispose spine data
+ */
+void Sticker::disposeSpineData() {
+    if (mAnimationState) {
+        spAnimationState_dispose(mAnimationState);
+        LOGD("Dispose animation state");
+    }
+
+    if (mSkeleton) {
+        spSkeleton_dispose(mSkeleton);
+        LOGD("Dispose skeleton");
+    }
+
+    if (mAnimationStateData) {
+        spAnimationStateData_dispose(mAnimationStateData);
+        LOGD("Dispose animation state data");
+    }
+
+    if (mSkeletonData) {
+        spSkeletonData_dispose(mSkeletonData);
+        LOGD("Dispose skeleton data");
+    }
+
+    if (mAtlas) {
+        spAtlas_dispose(mAtlas);
+        LOGD("Dispose atlas");
+    }
+
+    mAtlas = NULL;
+    mSkeletonData = NULL;
+    mSkeleton = NULL;
+    mAnimationStateData = NULL;
+    mAnimationState = NULL;
+
+    LOGD("Dispose Spine data: SUCCESSFUL...........");
 }

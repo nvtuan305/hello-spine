@@ -38,4 +38,8 @@ public class StickerSurfaceView extends GLSurfaceView {
         mRenderer = new StickerRenderer();
         setRenderer(mRenderer);
     }
+
+    public void onSurfaceDestroy() {
+        mRenderer.onSurfaceViewDestroyed();
+    }
 }
