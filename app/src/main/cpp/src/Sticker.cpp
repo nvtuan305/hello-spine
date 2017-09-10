@@ -109,6 +109,39 @@ void Sticker::initOpenGL(const char *texturePath) {
     LOGD("Init OpenGL: SUCCESSFUL...................");
 }
 
+void myListener(spAnimationState* state, spEventType type, spTrackEntry* entry, spEvent* event) {
+    switch (type) {
+        //
+        case SP_ANIMATION_START:
+            LOGE("Animation %s started on track %i\n", entry->animation->name, entry->trackIndex);
+            break;
+
+        case SP_ANIMATION_INTERRUPT:
+            LOGE("Animation %s interrupted on track %i\n", entry->animation->name, entry->trackIndex);
+            break;
+
+        case SP_ANIMATION_END:
+            LOGE("Animation %s ended on track %i\n", entry->animation->name, entry->trackIndex);
+            break;
+
+        case SP_ANIMATION_COMPLETE:
+            LOGE("Animation %s completed on track %i\n", entry->animation->name, entry->trackIndex);
+            break;
+
+        case SP_ANIMATION_DISPOSE:
+            LOGE("Track entry for animation %s disposed on track %i\n", entry->animation->name, entry->trackIndex);
+            break;
+
+        case SP_ANIMATION_EVENT:
+            LOGE("User defined event for animation %s on track %i\n", entry->animation->name, entry->trackIndex);
+            LOGE("Event: %s: %d, %f, %s\n", event->data->name, event->intValue, event->floatValue, event->stringValue);
+            break;
+
+        default:
+            LOGE("Unknown event type: %i", type);
+    }
+}
+
 /**
  * Initialize spine: Skeleton and animation state
  */
@@ -163,8 +196,14 @@ void Sticker::initSpine() {
         disposeSpineData();
         return;
     }
-    // Set default animation
-    spAnimationState_setAnimationByName(mAnimationState, 0, mDefaultAnimation, 1);
+
+    mAnimationState->listener = myListener;
+
+    // Set simulatously animation
+    spAnimationState_addAnimationByName(mAnimationState, 0, "walk", 1, 0);
+    spAnimationState_addAnimationByName(mAnimationState, 0, "roar", 1, 30);
+    spAnimationState_addAnimationByName(mAnimationState, 1, "walk", 1, 2);
+    spAnimationState_addAnimationByName(mAnimationState, 1, "gun-grab", 1, 2);
     LOGD("Create animation state from animation state data: SUCCESSFUL............");
 
     // Set default position
@@ -257,6 +296,7 @@ void Sticker::updateVertexAndTexCoordsData() {
         spSlot *slot = mSkeleton->drawOrder[i];
         if (!slot) continue;
 
+
         spAttachment *attachment = slot->attachment;
         if (!attachment) continue;
         LOGD("Processing attachment of SLOT[%d]...", i);
@@ -334,7 +374,6 @@ void Sticker::clearGLData() {
  */
 void Sticker::updateVertexAndTexCoordsData_fromRegionAttachment(spRegionAttachment *region,
                                                                 spSlot *slot) {
-    // LOGD("REGION_ATTACHMENT: Update vertices data...");
     spRegionAttachment_computeWorldVertices(region, slot->bone, mWorldVertices, 0, 2);
     float r = mSkeleton->color.r * slot->color.r * region->color.r;
     float g = mSkeleton->color.g * slot->color.g * region->color.g;
@@ -355,8 +394,6 @@ void Sticker::updateVertexAndTexCoordsData_fromRegionAttachment(spRegionAttachme
         mTexCoords.push_back(region->uvs[j * 2]);
         mTexCoords.push_back(region->uvs[j * 2 + 1]);
     }
-
-    // LOGD("REGION_ATTACHMENT: Updated. Size = %d %d", mVertexData.size(), mTexCoords.size());
 }
 
 /**
@@ -367,7 +404,6 @@ void Sticker::updateVertexAndTexCoordsData_fromMeshAttachment(spMeshAttachment *
     if (mesh->super.worldVerticesLength > MAX_VERTEX_COUNT)
         return;
 
-    // LOGD("MESH_ATTACHMENT: Update vertices data...");
     spVertexAttachment_computeWorldVertices(SUPER(mesh), slot, 0, mesh->super.worldVerticesLength,
                                             mWorldVertices, 0, 2);
     float r = mSkeleton->color.r * slot->color.r * mesh->color.r;
@@ -387,7 +423,6 @@ void Sticker::updateVertexAndTexCoordsData_fromMeshAttachment(spMeshAttachment *
         mTexCoords.push_back(mesh->uvs[j]);
         mTexCoords.push_back(mesh->uvs[j + 1]);
     }
-    // LOGD("MESH_ATTACHMENT: Updated. Size = %d %d", mVertexData.size(), mTexCoords.size());
 }
 
 /**
@@ -465,8 +500,9 @@ void Sticker::render() {
     glDrawArrays(GL_TRIANGLES, 0, (unsigned) this->mVertexData.size() / 2);
     checkGlError("glDrawArrays");
 
-    glDisableVertexAttribArray(this->mPositionHandle);
-    glDisableVertexAttribArray(this->mTexCoordsHandle);
+    glDisableVertexAttribArray(mPositionHandle);
+    glDisableVertexAttribArray(mTexCoordsHandle);
+    glDisableVertexAttribArray(mColorHandle);
 }
 
 /**
