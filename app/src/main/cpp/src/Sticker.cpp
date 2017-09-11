@@ -212,15 +212,16 @@ void Sticker::initSpine() {
     mAnimationState->listener = animationStateListener;
 
     // Set simultaneous animation
-    spAnimationState_addAnimationByName(mAnimationState, 0, "walk", 1, 0);
+    spAnimationState_setAnimationByName(mAnimationState, 0, mDefaultAnimation, 1);
+    /*spAnimationState_addAnimationByName(mAnimationState, 0, "walk", 1, 0);
     spAnimationState_addAnimationByName(mAnimationState, 0, "roar", 1, 30);
     spAnimationState_addAnimationByName(mAnimationState, 1, "walk", 1, 2);
-    spAnimationState_addAnimationByName(mAnimationState, 1, "gun-grab", 1, 2);
+    spAnimationState_addAnimationByName(mAnimationState, 1, "gun-grab", 1, 2);*/
     LOGD("Create animation state from animation state data: SUCCESSFUL............");
 
     // Set default position
-    mSkeleton->x = 30;
-    mSkeleton->y = -400;
+    mSkeleton->x = 0.0f;
+    mSkeleton->y = 0.0f;
     spSkeleton_updateWorldTransform(mSkeleton);
 
     LOGD("Init Spine: SUCCESSFUL...................");
@@ -249,9 +250,7 @@ void Sticker::resize(int width, int height) {
 
     // TODO Calculate position of camera (the left/right/top/bottom planes)
     // Default max size of sticker 1400 x 1400
-    float maxSize = 1400.0f;
-    mProjectionMatrix = ortho(-ratio * maxSize, ratio * maxSize, -maxSize,
-                              maxSize, 2.0f, 5.0f);
+    mProjectionMatrix = ortho(0.0f, 2164.81f, 0.0f, 2819.37f, 2.0f, 5.0f);
 }
 
 /**
@@ -346,19 +345,20 @@ void Sticker::updateVertexAndTexCoordsData() {
  * Update new blend mode
  */
 void Sticker::updateBlendMode(int newMode) {
-    mCurrentBlendMode = newMode;
-
     switch (mCurrentBlendMode) {
         case SP_BLEND_MODE_ADDITIVE: // Cr = Cs + Cd
-            glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            //glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            glBlendFunc(GL_ONE, GL_ONE);
             break;
 
         case SP_BLEND_MODE_MULTIPLY: // Cr = Cs * Cd
-            glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            //glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            glBlendFunc(GL_DST_COLOR, GL_ZERO);
             break;
 
         case SP_BLEND_MODE_SCREEN: // Cr = Cs * (1 - Cd) + Cd
-            glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_COLOR, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            //glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_COLOR, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR); // Cr = Cs + (1 - Cs) × Cd
             break;
 
         case SP_BLEND_MODE_NORMAL:
@@ -370,6 +370,7 @@ void Sticker::updateBlendMode(int newMode) {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             break;
     }
+    mCurrentBlendMode = newMode;
 }
 
 /**

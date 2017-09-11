@@ -2,10 +2,10 @@
 #include <Sticker.h>
 
 Sticker *mSticker = NULL;
-const char *atlasPath = "/sdcard/Sticker/raptor/raptor.atlas";
-const char *jsonPath = "/sdcard/Sticker/raptor/raptor.json";
-const char *imagePath = "/sdcard/Sticker/raptor/raptor.png";
-const char *defAnimation = "roar";
+const char *atlasPath = "/sdcard/Sticker/HPBD/HPBD.atlas";
+const char *jsonPath = "/sdcard/Sticker/HPBD/HPBD.json";
+const char *imagePath = "/sdcard/Sticker/HPBD/HPBD.png";
+const char *defAnimation = "animation";
 
 /*
  * ----------------------------------------------------------------------------------
