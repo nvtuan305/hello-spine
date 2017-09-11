@@ -109,36 +109,48 @@ void Sticker::initOpenGL(const char *texturePath) {
     LOGD("Init OpenGL: SUCCESSFUL...................");
 }
 
-void myListener(spAnimationState* state, spEventType type, spTrackEntry* entry, spEvent* event) {
+/**
+ * Animation state listener
+ *
+ * @param state listened spAnimationState
+ * @param type Event type
+ * @param entry Track entry
+ * @param event Event object
+ */
+void animationStateListener(spAnimationState *state, spEventType type, spTrackEntry *entry,
+                            spEvent *event) {
     switch (type) {
-        //
         case SP_ANIMATION_START:
-            LOGE("Animation %s started on track %i\n", entry->animation->name, entry->trackIndex);
+            LOGD("Animation %s started on track %i\n", entry->animation->name, entry->trackIndex);
             break;
 
         case SP_ANIMATION_INTERRUPT:
-            LOGE("Animation %s interrupted on track %i\n", entry->animation->name, entry->trackIndex);
+            LOGD("Animation %s interrupted on track %i\n", entry->animation->name,
+                 entry->trackIndex);
             break;
 
         case SP_ANIMATION_END:
-            LOGE("Animation %s ended on track %i\n", entry->animation->name, entry->trackIndex);
+            LOGD("Animation %s ended on track %i\n", entry->animation->name, entry->trackIndex);
             break;
 
         case SP_ANIMATION_COMPLETE:
-            LOGE("Animation %s completed on track %i\n", entry->animation->name, entry->trackIndex);
+            LOGD("Animation %s completed on track %i\n", entry->animation->name, entry->trackIndex);
             break;
 
         case SP_ANIMATION_DISPOSE:
-            LOGE("Track entry for animation %s disposed on track %i\n", entry->animation->name, entry->trackIndex);
+            LOGD("Track entry for animation %s disposed on track %i\n", entry->animation->name,
+                 entry->trackIndex);
             break;
 
         case SP_ANIMATION_EVENT:
-            LOGE("User defined event for animation %s on track %i\n", entry->animation->name, entry->trackIndex);
-            LOGE("Event: %s: %d, %f, %s\n", event->data->name, event->intValue, event->floatValue, event->stringValue);
+            LOGD("User defined event %s for animation %s on track %i\n", event->data->name,
+                 entry->animation->name, entry->trackIndex);
+            LOGD("Event: %s: %d, %f, %s\n", event->data->name, event->intValue, event->floatValue,
+                 event->stringValue);
             break;
 
         default:
-            LOGE("Unknown event type: %i", type);
+            LOGD("Unknown event type: %i", type);
     }
 }
 
@@ -197,9 +209,9 @@ void Sticker::initSpine() {
         return;
     }
 
-    mAnimationState->listener = myListener;
+    mAnimationState->listener = animationStateListener;
 
-    // Set simulatously animation
+    // Set simultaneous animation
     spAnimationState_addAnimationByName(mAnimationState, 0, "walk", 1, 0);
     spAnimationState_addAnimationByName(mAnimationState, 0, "roar", 1, 30);
     spAnimationState_addAnimationByName(mAnimationState, 1, "walk", 1, 2);
